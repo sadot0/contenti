@@ -25,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("topic")
     i.add_argument("--net", default="instagram", help="instagram | tiktok | youtube")
 
+    d = sub.add_parser("daily", help="суточный цикл: тренды→темы→идеи→уведомление (для cron/launchd)")
+    d.add_argument("--net", default="instagram", help="instagram | tiktok | youtube")
+    d.add_argument("--ideas", type=int, default=3, help="сколько идей сгенерировать")
+
     args = p.parse_args(argv)
 
     if args.cmd == "doctor":
@@ -45,6 +49,13 @@ def main(argv: list[str] | None = None) -> int:
         be = get_backend(args.llm, model=args.model) if args.llm == "ollama" else get_backend(args.llm)
         result = Orchestrator(be).make_idea(args.topic, network=args.net)
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "daily":
+        from contentos.daily import run_daily
+
+        be = get_backend(args.llm, model=args.model) if args.llm == "ollama" else get_backend(args.llm)
+        run_daily(be, network=args.net, n_ideas=args.ideas)
         return 0
 
     return 1
