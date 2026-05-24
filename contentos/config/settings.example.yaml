@@ -1,0 +1,20 @@
+# ContentOS — пример настроек. Скопируй в settings.yaml и поправь под себя.
+
+llm:
+  backend: ollama            # ollama (по умолчанию, бесплатно) | claude (нужен платный ключ)
+  model: qwen2.5:7b-instruct # уточни через `ollama list`
+  host: http://localhost:11434
+  temperature: 0.7
+
+author:
+  username: mirzabek_vokhidov
+  niche: crypto
+  market: Uzbekistan / Tashkent
+  languages: [ru, uz]
+
+priority_networks: [instagram]   # tiktok пока не ведётся, youtube — 2 ролика
+
+inspirations:
+  - kirills_finance
+  - klinkovprofessor
+  - nomoeyesclosed
