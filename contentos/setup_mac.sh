@@ -8,12 +8,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CO="$ROOT/contentos"
 MODEL="${CONTENTOS_MODEL:-qwen2.5:14b-instruct}"
 
-echo "==> ContentOS setup (root: $ROOT, model: $MODEL)"
+# Предпочитаем стабильный Python 3.12 (у 3.14 на macOS бывает сломан expat → падает pip и XML/RSS).
+if command -v python3.12 >/dev/null 2>&1; then PY=python3.12
+elif command -v python3.13 >/dev/null 2>&1; then PY=python3.13
+else PY=python3; fi
+
+echo "==> ContentOS setup (root: $ROOT, model: $MODEL, python: $PY [$($PY --version 2>&1)])"
 
 # 1. Python-зависимости (для ingestion/транскрибации). Само ядро contentos — на stdlib.
 if [ -f "$ROOT/requirements.txt" ]; then
   echo "==> pip install зависимостей ingestion (instaloader, faster-whisper)..."
-  python3 -m pip install -r "$ROOT/requirements.txt" || echo "[!] pip частично не прошёл — проверь Python3/pip"
+  $PY -m pip install -r "$ROOT/requirements.txt" || echo "[!] pip частично не прошёл — проверь $PY/pip"
 fi
 
 # 2. Ollama
@@ -39,15 +44,15 @@ echo "==> конфиги: $CO/config/settings.yaml и feeds.txt (поправь 
 
 # 4. Проверка ядра
 echo "==> проверка движка (doctor)..."
-( cd "$CO" && python3 -m contentos doctor --model "$MODEL" ) || true
+( cd "$CO" && $PY -m contentos doctor --model "$MODEL" ) || true
 
 echo ""
-echo "================ ГОТОВО ================"
+echo "================ ГОТОВО (python: $PY) ================"
 echo "Проверь генерацию идеи:"
-echo "  cd $CO && python3 -m contentos idea \"почему биткоин падает\" --net instagram --model $MODEL"
+echo "  cd $CO && $PY -m contentos idea \"почему биткоин падает\" --net instagram --model $MODEL"
 echo ""
-echo "Суточный цикл вручную:"
-echo "  cd $CO && python3 -m contentos daily --net instagram --ideas 3 --model $MODEL"
+echo "Суточный цикл (с трендами из RSS):"
+echo "  cd $CO && $PY -m contentos daily --net instagram --ideas 3 --model $MODEL"
 echo ""
 echo "Автозапуск каждое утро — см. contentos/docs/07-setup-macos.md (launchd)."
 echo "Уведомления в Telegram — задай CONTENTOS_TG_TOKEN и CONTENTOS_TG_CHAT."
