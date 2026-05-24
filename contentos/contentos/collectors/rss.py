@@ -1,20 +1,21 @@
-"""RSS-сборщик трендов/новостей (интернет-доступ движка).
+"""RSS/Atom-сборщик трендов (интернет-доступ движка).
 
-Использует только стандартную библиотеку (urllib + xml), без внешних зависимостей.
-Подбери ленты под нишу: крипто + узбекские источники. Примеры лент — в config/feeds.example.txt.
+Парсер написан на чистом Python (regex + html), БЕЗ модуля xml/expat — чтобы работать на
+любой машине, включая сборки Python со сломанным pyexpat (частая болячка Homebrew на macOS).
+Подбери ленты под нишу (крипто + узбекские источники) в config/feeds.txt.
 """
 
 from __future__ import annotations
 
+import html
+import re
 import urllib.request
 from dataclasses import dataclass
 
-try:  # на некоторых сборках Python (напр. сломанный 3.14 expat) xml может не импортироваться
-    import xml.etree.ElementTree as ET
-except Exception:  # noqa: BLE001
-    ET = None
-
 _UA = "Mozilla/5.0 (compatible; ContentOS/0.1; +local)"
+
+_ITEM_RE = re.compile(r"<(item|entry)\b[^>]*>(.*?)</\1>", re.DOTALL | re.IGNORECASE)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -26,52 +27,56 @@ class FeedItem:
     source: str
 
 
-def _text(el, *tags) -> str:
-    for t in tags:
-        found = el.find(t)
-        if found is not None and found.text:
-            return found.text.strip()
+def _field(block: str, *tags: str) -> str:
+    """Вытащить содержимое первого встретившегося тега из блока."""
+    for tag in tags:
+        m = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, re.DOTALL | re.IGNORECASE)
+        if m:
+            return _clean(m.group(1))
     return ""
 
 
+def _link(block: str) -> str:
+    """RSS: <link>url</link>; Atom: <link href="url"/>."""
+    m = re.search(r"<link\b[^>]*>(.*?)</link>", block, re.DOTALL | re.IGNORECASE)
+    if m and m.group(1).strip():
+        return _clean(m.group(1))
+    m = re.search(r'<link\b[^>]*href=["\']([^"\']+)["\']', block, re.IGNORECASE)
+    return _clean(m.group(1)) if m else ""
+
+
+def _clean(s: str) -> str:
+    s = re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", s, flags=re.DOTALL)
+    s = _TAG_RE.sub("", s)              # снять вложенный HTML
+    return html.unescape(s).strip()
+
+
+def _source_title(text: str) -> str:
+    # заголовок ленты = первый <title> до первого <item>/<entry>
+    head = re.split(r"<(?:item|entry)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    m = re.search(r"<title\b[^>]*>(.*?)</title>", head, re.DOTALL | re.IGNORECASE)
+    return _clean(m.group(1)) if m else ""
+
+
 def fetch_feed(url: str, limit: int = 15) -> list[FeedItem]:
-    """Скачать одну RSS/Atom-ленту. Возвращает список FeedItem."""
-    if ET is None:
-        raise RuntimeError(
-            "XML-парсер недоступен (вероятно, сломан expat в этом Python). "
-            "Используй Python 3.12/3.13 для RSS-трендов."
-        )
+    """Скачать одну RSS/Atom-ленту. Возвращает список FeedItem. Парсинг без xml/expat."""
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     with urllib.request.urlopen(req, timeout=30) as resp:
-        raw = resp.read()
-    root = ET.fromstring(raw)
+        text = resp.read().decode("utf-8", errors="replace")
 
+    source = _source_title(text)
     items: list[FeedItem] = []
-    # RSS 2.0: channel/item ; Atom: feed/entry
-    channel = root.find("channel")
-    source = _text(channel, "title") if channel is not None else _text(root, "{http://www.w3.org/2005/Atom}title")
-    entries = (channel.findall("item") if channel is not None
-               else root.findall("{http://www.w3.org/2005/Atom}entry"))
-
-    for e in entries[:limit]:
-        if channel is not None:  # RSS
-            items.append(FeedItem(
-                title=_text(e, "title"),
-                link=_text(e, "link"),
-                published=_text(e, "pubDate", "{http://purl.org/dc/elements/1.1/}date"),
-                summary=_text(e, "description"),
-                source=source,
-            ))
-        else:  # Atom
-            ns = "{http://www.w3.org/2005/Atom}"
-            link_el = e.find(f"{ns}link")
-            items.append(FeedItem(
-                title=_text(e, f"{ns}title"),
-                link=link_el.get("href") if link_el is not None else "",
-                published=_text(e, f"{ns}updated", f"{ns}published"),
-                summary=_text(e, f"{ns}summary", f"{ns}content"),
-                source=source,
-            ))
+    for m in _ITEM_RE.finditer(text):
+        block = m.group(2)
+        items.append(FeedItem(
+            title=_field(block, "title"),
+            link=_link(block),
+            published=_field(block, "pubDate", "published", "updated", "dc:date"),
+            summary=_field(block, "description", "summary", "content"),
+            source=source,
+        ))
+        if len(items) >= limit:
+            break
     return items
 
 
