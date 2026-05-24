@@ -1,8 +1,12 @@
 """CLI ContentOS.
 
 Примеры (запускать у себя локально, где поднят Ollama):
-    python -m contentos doctor
-    python -m contentos idea "почему биткоин падает" --net instagram
+    python3 -m contentos doctor
+    python3 -m contentos idea "почему биткоин падает" --net instagram
+    python3 -m contentos daily --net instagram --ideas 3
+
+Глобальные флаги --llm / --model указываются ПОСЛЕ подкоманды, напр.:
+    python3 -m contentos doctor --model qwen2.5:14b-instruct
 """
 
 from __future__ import annotations
@@ -12,27 +16,42 @@ import json
 
 from contentos.llm.base import get_backend
 
+DEFAULT_MODEL = "qwen2.5:14b-instruct"
+
+
+def _common() -> argparse.ArgumentParser:
+    """Общие флаги для всех подкоманд (работают после имени подкоманды)."""
+    c = argparse.ArgumentParser(add_help=False)
+    c.add_argument("--llm", default="ollama", help="бэкенд: ollama | claude")
+    c.add_argument("--model", default=DEFAULT_MODEL, help="имя модели Ollama")
+    return c
+
+
+def _backend(args):
+    if args.llm == "ollama":
+        return get_backend("ollama", model=args.model)
+    return get_backend(args.llm)
+
 
 def main(argv: list[str] | None = None) -> int:
+    common = _common()
     p = argparse.ArgumentParser(prog="contentos", description="Персональный AI-движок контента")
-    p.add_argument("--llm", default="ollama", help="бэкенд: ollama | claude")
-    p.add_argument("--model", default="qwen2.5:7b-instruct", help="имя модели Ollama")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("doctor", help="проверить окружение (Ollama доступен?)")
+    sub.add_parser("doctor", parents=[common], help="проверить окружение (Ollama доступен?)")
 
-    i = sub.add_parser("idea", help="сгенерировать идею: бриф+сценарий+упаковку")
+    i = sub.add_parser("idea", parents=[common], help="идея: бриф+сценарий+упаковка")
     i.add_argument("topic")
     i.add_argument("--net", default="instagram", help="instagram | tiktok | youtube")
 
-    d = sub.add_parser("daily", help="суточный цикл: тренды→темы→идеи→уведомление (для cron/launchd)")
+    d = sub.add_parser("daily", parents=[common], help="суточный цикл (для cron/launchd)")
     d.add_argument("--net", default="instagram", help="instagram | tiktok | youtube")
     d.add_argument("--ideas", type=int, default=3, help="сколько идей сгенерировать")
 
     args = p.parse_args(argv)
 
     if args.cmd == "doctor":
-        be = get_backend(args.llm, model=args.model) if args.llm == "ollama" else get_backend(args.llm)
+        be = _backend(args)
         ok = getattr(be, "health", lambda: None)()
         if ok is True:
             print(f"[ok] Ollama доступен, модель '{args.model}' найдена.")
@@ -46,16 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "idea":
         from contentos.orchestrator import Orchestrator
 
-        be = get_backend(args.llm, model=args.model) if args.llm == "ollama" else get_backend(args.llm)
-        result = Orchestrator(be).make_idea(args.topic, network=args.net)
+        result = Orchestrator(_backend(args)).make_idea(args.topic, network=args.net)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == "daily":
         from contentos.daily import run_daily
 
-        be = get_backend(args.llm, model=args.model) if args.llm == "ollama" else get_backend(args.llm)
-        run_daily(be, network=args.net, n_ideas=args.ideas)
+        run_daily(_backend(args), network=args.net, n_ideas=args.ideas)
         return 0
 
     return 1

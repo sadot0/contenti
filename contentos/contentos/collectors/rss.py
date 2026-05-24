@@ -7,8 +7,12 @@
 from __future__ import annotations
 
 import urllib.request
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+
+try:  # на некоторых сборках Python (напр. сломанный 3.14 expat) xml может не импортироваться
+    import xml.etree.ElementTree as ET
+except Exception:  # noqa: BLE001
+    ET = None
 
 _UA = "Mozilla/5.0 (compatible; ContentOS/0.1; +local)"
 
@@ -32,6 +36,11 @@ def _text(el, *tags) -> str:
 
 def fetch_feed(url: str, limit: int = 15) -> list[FeedItem]:
     """Скачать одну RSS/Atom-ленту. Возвращает список FeedItem."""
+    if ET is None:
+        raise RuntimeError(
+            "XML-парсер недоступен (вероятно, сломан expat в этом Python). "
+            "Используй Python 3.12/3.13 для RSS-трендов."
+        )
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     with urllib.request.urlopen(req, timeout=30) as resp:
         raw = resp.read()
