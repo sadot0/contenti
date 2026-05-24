@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Secrets / sessions
+.env
+*.session
+session-*
+*.session-*
+
+# Downloaded data & reports
+data/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.mp3
+*.wav
+
+# OS
+.DS_Store
